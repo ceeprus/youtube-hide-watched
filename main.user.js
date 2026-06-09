@@ -17,8 +17,8 @@
 // @grant        GM_setValue
 // @grant        GM.getValue
 // @grant        GM.setValue
-// @downloadURL  https://update.greasyfork.org/scripts/13040/YouTube%3A%20Hide%20Watched%20Videos.user.js
-// @updateURL    https://update.greasyfork.org/scripts/13040/YouTube%3A%20Hide%20Watched%20Videos.meta.js
+// @downloadURL https://raw.githubusercontent.com/ceeprus/youtube-hide-watched/master/main.user.js
+// @updateURL https://raw.githubusercontent.com/ceeprus/youtube-hide-watched/master/main.user.js
 // ==/UserScript==
 
 // To submit bugs or submit revisions please see visit the repository at:
@@ -133,6 +133,10 @@ const REGEX_USER = /.*\/@.*/u;
 
 .YT-HWV-SHORTS-DIMMED { opacity: 0.3 }
 
+.YT-HWV-MIXES-HIDDEN { display: none !important }
+
+.YT-HWV-MIXES-DIMMED { opacity: 0.3 }
+
 .YT-HWV-HIDDEN-ROW-PARENT { padding-bottom: 10px }
 
 .YT-HWV-BUTTONS {
@@ -204,6 +208,14 @@ const REGEX_USER = /.*\/@.*/u;
 				'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48"><g fill="currentColor"><g clip-path="url(#slashGap)"><path d="M31.97 3c-1.11 0-2.25.3-3.27.93l-15.93 9.45c-2.43 1.41-3.87 4.29-3.75 7.32.15 3 1.74 5.61 4.17 6.84.06.03 2.25 1.05 2.25 1.05l-2.7 1.59C9.32 32.22 8 36.99 9.8 40.83c1.29 2.64 3.72 4.17 6.27 4.17 1.11 0 2.22-.3 3.27-.93l15.93-9.45c2.4-1.44 3.87-4.29 3.72-7.35-.12-2.97-1.74-5.61-4.17-6.81-.06-.03-2.25-1.05-2.25-1.05l2.7-1.59c3.42-2.04 4.74-6.81 2.91-10.65C36.95 4.53 34.49 3 31.97 3z"/></g><path d="m7.501 5.55 4.066-2.42 24.26 40.78-4.065 2.418z"/></g></svg>',
 			name: 'Toggle Shorts',
 			stateKey: 'YTHWV_STATE_SHORTS',
+			type: 'toggle',
+		},
+		{
+			icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>',
+			iconHidden:
+				'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/><path fill="none" stroke="currentColor" stroke-width="2.4" d="M3 21 21 3"/></svg>',
+			name: 'Toggle Mixes',
+			stateKey: 'YTHWV_STATE_MIXES',
 			type: 'toggle',
 		},
 		{
@@ -303,6 +315,44 @@ const REGEX_USER = /.*\/@.*/u;
 		logDebug(`Found ${shortsContainers.length} shorts container elements`);
 
 		return shortsContainers;
+	};
+
+	// ===========================================================
+
+	const findMixesContainers = () => {
+		const mixesContainers = [];
+
+		document
+			.querySelectorAll(
+				'a[href*="start_radio=1"], a[href*="list=RD"], a[href*="&list=RD"]',
+			)
+			.forEach((link) => {
+				const container =
+					// Home / Subscriptions grid cell
+					link.closest('ytd-rich-item-renderer') ||
+					link.closest('ytd-grid-video-renderer') ||
+					// Search results (legacy + lockup)
+					link.closest('ytd-radio-renderer') ||
+					link.closest('ytd-video-renderer') ||
+					// Watch page right-hand sidebar
+					link.closest('ytd-compact-radio-renderer') ||
+					link.closest('ytd-compact-video-renderer') ||
+					// New unified lockup (search + sidebar, 2024+)
+					link.closest('yt-lockup-view-model');
+
+				if (!container) return;
+
+				// Never hide the item that's queued to play next.
+				if (container.closest('ytd-compact-autoplay-renderer')) return;
+
+				if (!mixesContainers.includes(container)) {
+					mixesContainers.push(container);
+				}
+			});
+
+		logDebug(`Found ${mixesContainers.length} mixes container elements`);
+
+		return mixesContainers;
 	};
 
 	// ===========================================================
@@ -467,6 +517,36 @@ const REGEX_USER = /.*\/@.*/u;
 
 	// ===========================================================
 
+	const updateClassOnMixesItems = async () => {
+		try {
+			const section = determineYoutubeSection();
+
+			document.querySelectorAll('.YT-HWV-MIXES-DIMMED').forEach((el) => {
+				el.classList.remove('YT-HWV-MIXES-DIMMED');
+			});
+			document.querySelectorAll('.YT-HWV-MIXES-HIDDEN').forEach((el) => {
+				el.classList.remove('YT-HWV-MIXES-HIDDEN');
+			});
+
+			const state = await stateGet(`YTHWV_STATE_MIXES_${section}`);
+
+			const mixesContainers = findMixesContainers();
+
+			mixesContainers.forEach((item) => {
+				// Add current class
+				if (state === 'dimmed') {
+					item.classList.add('YT-HWV-MIXES-DIMMED');
+				} else if (state === 'hidden') {
+					item.classList.add('YT-HWV-MIXES-HIDDEN');
+				}
+			});
+		} catch (error) {
+			console.error('[YT-HWV]', error);
+		}
+	};
+
+	// ===========================================================
+
 	const renderButtons = async () => {
 		// Find button area target
 		const target = findButtonAreaTarget();
@@ -517,6 +597,7 @@ const REGEX_USER = /.*\/@.*/u;
 
 						await updateClassOnWatchedItems();
 						await updateClassOnShortsItems();
+						await updateClassOnMixesItems();
 						await renderButtons();
 					});
 					break;
@@ -551,9 +632,10 @@ const REGEX_USER = /.*\/@.*/u;
 			return;
 		}
 
-		logDebug('Running check for watched videos, and shorts');
+		logDebug('Running check for watched videos, shorts, and mixes');
 		await updateClassOnWatchedItems();
 		await updateClassOnShortsItems();
+		await updateClassOnMixesItems();
 		await renderButtons();
 	}, 250);
 
