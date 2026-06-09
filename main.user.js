@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         YouTube: Hide Watched Videos
 // @namespace    https://www.haus.gg/
-// @version      6.18
+// @version      6.22
 // @license      MIT
-// @description  Hides watched videos (and shorts) from your YouTube subscriptions page.
+// @description  Hides watched videos, Shorts, Mixes, and subscribed channels from your YouTube feeds.
 // @author       Ev Haus
 // @author       netjeff
 // @author       actionless
+// @author       ceeprus
 // @match        http://*.youtube.com/*
 // @match        http://youtube.com/*
 // @match        https://*.youtube.com/*
@@ -22,9 +23,9 @@
 // ==/UserScript==
 
 // To submit bugs or submit revisions please see visit the repository at:
-// https://github.com/EvHaus/youtube-hide-watched
+// https://github.com/ceeprus/youtube-hide-watched
 // You can open new issues at:
-// https://github.com/EvHaus/youtube-hide-watched/issues
+// https://github.com/ceeprus/youtube-hide-watched/issues
 
 const REGEX_CHANNEL = /.*\/(user|channel|c)\/.+\/videos/u;
 const REGEX_USER = /.*\/@.*/u;
@@ -50,12 +51,21 @@ const REGEX_USER = /.*\/@.*/u;
 	// GM_config setup
 	const title = document.createElement('a');
 	title.textContent = 'YouTube: Hide Watched Videos Settings';
-	title.href = 'https://github.com/EvHaus/youtube-hide-watched';
+	title.href = 'https://github.com/ceeprus/youtube-hide-watched';
 	title.target = '_blank';
 	const gmc = new GM_config({
 		events: {
-			save() {
+			async save() {
 				this.close();
+				// Re-apply the tint strength immediately
+				applySubbedTintSetting();
+				// Honor the "refresh now" checkbox, then reset it
+				if (this.get('SUBBED_FORCE_REFRESH')) {
+					this.set('SUBBED_FORCE_REFRESH', false);
+					this.write();
+					await loadSubs(true);
+				}
+				await updateClassOnSubscribedItems();
 			},
 		},
 		fields: {
@@ -65,6 +75,25 @@ const REGEX_USER = /.*\/@.*/u;
 				max: 100,
 				min: 0,
 				type: 'int',
+			},
+			SUBBED_DIM_BRIGHTNESS: {
+				default: 45,
+				label: 'Subscribed Channels Tint Brightness % (lower = darker)',
+				max: 100,
+				min: 0,
+				type: 'int',
+			},
+			SUBBED_REFRESH_HOURS: {
+				default: 24,
+				label: 'Refresh Subscription List Every (hours)',
+				max: 720,
+				min: 1,
+				type: 'int',
+			},
+			SUBBED_FORCE_REFRESH: {
+				default: false,
+				label: 'Refresh subscription list now (on Save)',
+				type: 'checkbox',
 			},
 		},
 		id: 'YouTubeHideWatchedVideos',
@@ -136,6 +165,13 @@ const REGEX_USER = /.*\/@.*/u;
 .YT-HWV-MIXES-HIDDEN { display: none !important }
 
 .YT-HWV-MIXES-DIMMED { opacity: 0.3 }
+
+.YT-HWV-SUBBED-HIDDEN { display: none !important }
+
+.YT-HWV-SUBBED-DIMMED {
+	filter: brightness(var(--ythwv-subbed-brightness, 0.45)) saturate(0.7) !important;
+	transition: filter 0.15s ease;
+}
 
 .YT-HWV-HIDDEN-ROW-PARENT { padding-bottom: 10px }
 
@@ -219,6 +255,15 @@ const REGEX_USER = /.*\/@.*/u;
 			type: 'toggle',
 		},
 		{
+			icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M20 8H4V6h16v2zm-2-6H6v2h12V2zm4 10v8c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2zm-6 4l-6-3.27v6.53L16 16z"/></svg>',
+			iconHidden:
+				'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M20 8H4V6h16v2zm-2-6H6v2h12V2zm4 10v8c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-8c0-1.1.9-2 2-2h16c1.1 0 2 .9 2 2zm-6 4l-6-3.27v6.53L16 16z"/><path fill="none" stroke="currentColor" stroke-width="2.4" d="M3 21 21 3"/></svg>',
+			name: 'Toggle Subscribed Channels (homepage)',
+			stateKey: 'YTHWV_STATE_SUBBED',
+			type: 'toggle',
+			global: true,
+		},
+		{
 			icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="currentColor" d="M12 9.5a2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 1 0-5m0-1c-1.93 0-3.5 1.57-3.5 3.5s1.57 3.5 3.5 3.5 3.5-1.57 3.5-3.5-1.57-3.5-3.5-3.5zM13.22 3l.55 2.2.13.51.5.18c.61.23 1.19.56 1.72.98l.4.32.5-.14 2.17-.62 1.22 2.11-1.63 1.59-.37.36.08.51c.05.32.08.64.08.98s-.03.66-.08.98l-.08.51.37.36 1.63 1.59-1.22 2.11-2.17-.62-.5-.14-.4.32c-.53.43-1.11.76-1.72.98l-.5.18-.13.51-.55 2.24h-2.44l-.55-2.2-.13-.51-.5-.18c-.6-.23-1.18-.56-1.72-.99l-.4-.32-.5.14-2.17.62-1.21-2.12 1.63-1.59.37-.36-.08-.51c-.05-.32-.08-.65-.08-.98s.03-.66.08-.98l.08-.51-.37-.36L3.6 8.56l1.22-2.11 2.17.62.5.14.4-.32c.53-.44 1.11-.77 1.72-.99l.5-.18.13-.51.54-2.21h2.44M14 2h-4l-.74 2.96c-.73.27-1.4.66-2 1.14l-2.92-.83-2 3.46 2.19 2.13c-.06.37-.09.75-.09 1.14s.03.77.09 1.14l-2.19 2.13 2 3.46 2.92-.83c.6.48 1.27.87 2 1.14L10 22h4l.74-2.96c.73-.27 1.4-.66 2-1.14l2.92.83 2-3.46-2.19-2.13c.06-.37.09-.75.09-1.14s-.03-.77-.09-1.14l2.19-2.13-2-3.46-2.92.83c-.6-.48-1.27-.87-2-1.14L14 2z"/></svg>',
 			name: 'Settings',
 			type: 'settings',
@@ -262,12 +307,19 @@ const REGEX_USER = /.*\/@.*/u;
 			);
 		});
 
+		// YouTube Watchmarker (sniklaus/youtube-watchmarker) tags the thumbnail
+		// link of any video in its history with the `youwatch-mark` class,
+		// covering videos YouTube itself no longer draws a progress bar for.
+		// Those count as fully watched, so they bypass the progress threshold.
+		const marked = Array.from(document.querySelectorAll('a.youwatch-mark'));
+
 		logDebug(
-			`Found ${watched.length} watched elements ` +
-				`(${withThreshold.length} within threshold)`,
+			`Found ${watched.length} progress bars ` +
+				`(${withThreshold.length} within threshold) + ` +
+				`${marked.length} watchmarker marks`,
 		);
 
-		return withThreshold;
+		return [...withThreshold, ...marked];
 	};
 
 	// ===========================================================
@@ -546,6 +598,280 @@ const REGEX_USER = /.*\/@.*/u;
 	};
 
 	// ===========================================================
+	// Subscribed-channel hiding (homepage only).
+	//
+	// Unlike watched/shorts/mixes, "subscribed" is not marked on a feed
+	// card, so we build the viewer's own subscription list once (from
+	// /feed/channels), cache it per-account, then match it against the
+	// channel link on each homepage tile.
+
+	// In-memory set of normalized identifiers (lowercased @handles + UC ids)
+	let subbedSet = null;
+
+	const applySubbedTintSetting = () => {
+		let pct = 45;
+		try {
+			pct = Number(gmc.get('SUBBED_DIM_BRIGHTNESS'));
+		} catch (_) {
+			/* defaults */
+		}
+		if (!Number.isFinite(pct)) pct = 45;
+		pct = Math.max(0, Math.min(100, pct));
+		document.documentElement.style.setProperty(
+			'--ythwv-subbed-brightness',
+			String(pct / 100),
+		);
+	};
+
+	// A per-account key so each signed-in user gets their own cached list
+	const getUserId = () => {
+		const html = document.documentElement.innerHTML;
+		const m =
+			html.match(/"DATASYNC_ID":"([^"|]+)/) ||
+			html.match(/"DELEGATED_SESSION_ID":"([^"]+)"/);
+		return m ? m[1] : 'default';
+	};
+
+	const parseSubsFromHtml = (html) => {
+		const ids = new Set();
+		const handles = new Set();
+		for (const m of html.matchAll(
+			/"(?:channelId|browseId)":"(UC[0-9A-Za-z_-]{22})"/g,
+		)) {
+			ids.add(m[1]);
+		}
+		for (const m of html.matchAll(
+			/"(?:canonicalBaseUrl|url)":"\\?\/(@[^"\\/]+)"/g,
+		)) {
+			handles.add(m[1].toLowerCase());
+		}
+		return { ids: [...ids], handles: [...handles] };
+	};
+
+	// Max number of continuation pages to walk when collecting subscriptions
+	const SUBS_FETCH_MAX_PAGES = 60;
+
+	const matchFirst = (text, re) => {
+		const m = text.match(re);
+		return m ? m[1] : null;
+	};
+
+	const getContinuationToken = (text) => {
+		const m = text.match(/"continuationCommand":\{"token":"([^"]+)"/);
+		return m ? m[1] : null;
+	};
+
+	// Compute the SAPISIDHASH auth header YouTube's web client uses, so the
+	// continuation requests return the viewer's real subscriptions instead
+	// of a logged-out response.
+	const sapisidHash = async () => {
+		try {
+			const sapisid = (
+				document.cookie.match(/(?:^|;\s*)SAPISID=([^;]+)/) ||
+				document.cookie.match(/(?:^|;\s*)__Secure-3PAPISID=([^;]+)/)
+			)?.[1];
+			if (!sapisid) return null;
+			const origin = 'https://www.youtube.com';
+			const ts = Math.floor(Date.now() / 1000);
+			const enc = new TextEncoder().encode(`${ts} ${sapisid} ${origin}`);
+			const buf = await crypto.subtle.digest('SHA-1', enc);
+			const hex = [...new Uint8Array(buf)]
+				.map((b) => b.toString(16).padStart(2, '0'))
+				.join('');
+			return `SAPISIDHASH ${ts}_${hex}`;
+		} catch (_) {
+			return null;
+		}
+	};
+
+	const loadSubs = async (force = false) => {
+		const key = `YTHWV_SUBS_${getUserId()}`;
+		let ttlHours = 24;
+		try {
+			ttlHours = Number(gmc.get('SUBBED_REFRESH_HOURS')) || 24;
+		} catch (_) {
+			/* defaults */
+		}
+
+		let cached = null;
+		try {
+			const raw = await stateGet(key, null);
+			if (raw) cached = JSON.parse(raw);
+		} catch (_) {
+			/* ignore */
+		}
+
+		const isFresh =
+			cached &&
+			Date.now() - cached.updated < ttlHours * 3600 * 1000 &&
+			(cached.ids.length || cached.handles.length);
+
+		if (!force && isFresh) {
+			subbedSet = new Set([...cached.ids, ...cached.handles]);
+			return subbedSet;
+		}
+
+		try {
+			const ids = new Set();
+			const handles = new Set();
+
+			// /feed/channels lazy-loads, so the initial HTML holds only the
+			// first batch of subscriptions. Parse that, then follow the list's
+			// continuation tokens through the InnerTube API to collect EVERY
+			// subscription -- otherwise channels past the first page never make
+			// it into the set and can't be hidden.
+			const res = await fetch('https://www.youtube.com/feed/channels', {
+				credentials: 'include',
+			});
+			const html = await res.text();
+			let parsed = parseSubsFromHtml(html);
+			parsed.ids.forEach((x) => ids.add(x));
+			parsed.handles.forEach((x) => handles.add(x));
+
+			const apiKey = matchFirst(html, /"INNERTUBE_API_KEY":"([^"]+)"/);
+			const clientVersion =
+				matchFirst(html, /"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"/) ||
+				matchFirst(html, /"clientVersion":"([^"]+)"/);
+			const auth = await sapisidHash();
+			let token = getContinuationToken(html);
+			const seen = new Set();
+			let pages = 0;
+
+			while (
+				token &&
+				apiKey &&
+				auth &&
+				!seen.has(token) &&
+				pages < SUBS_FETCH_MAX_PAGES
+			) {
+				seen.add(token);
+				pages += 1;
+				let json;
+				try {
+					const cres = await fetch(
+						`https://www.youtube.com/youtubei/v1/browse?key=${apiKey}&prettyPrint=false`,
+						{
+							method: 'POST',
+							credentials: 'include',
+							headers: {
+								'Content-Type': 'application/json',
+								Authorization: auth,
+								'X-Origin': 'https://www.youtube.com',
+								'X-Goog-AuthUser': '0',
+							},
+							body: JSON.stringify({
+								context: {
+									client: {
+										clientName: 'WEB',
+										clientVersion: clientVersion || '2.20240101.00.00',
+										hl: 'en',
+										gl: 'US',
+									},
+								},
+								continuation: token,
+							}),
+						},
+					);
+					if (!cres.ok) break;
+					json = await cres.text();
+				} catch (_) {
+					break;
+				}
+				const before = ids.size + handles.size;
+				parsed = parseSubsFromHtml(json);
+				parsed.ids.forEach((x) => ids.add(x));
+				parsed.handles.forEach((x) => handles.add(x));
+				token = getContinuationToken(json);
+				if (ids.size + handles.size === before && !token) break;
+			}
+
+			if (ids.size || handles.size) {
+				const out = {
+					updated: Date.now(),
+					ids: [...ids],
+					handles: [...handles],
+				};
+				await stateSet(key, JSON.stringify(out));
+				subbedSet = new Set([...out.ids, ...out.handles]);
+				logDebug(
+					`Loaded ${out.ids.length} ids / ${out.handles.length} handles`,
+				);
+				return subbedSet;
+			}
+		} catch (error) {
+			console.error('[YT-HWV] Failed to fetch subscriptions', error);
+		}
+
+		// Fall back to whatever we had cached
+		if (cached) subbedSet = new Set([...cached.ids, ...cached.handles]);
+		return subbedSet;
+	};
+
+	// Reduce a channel link to a comparable id (@handle or UC id), or null
+	const normalizeChannelHref = (href) => {
+		if (!href) return null;
+		let path = href;
+		try {
+			path = new URL(href, location.origin).pathname;
+		} catch (_) {
+			/* href was already a path */
+		}
+		path = path.replace(/^\//, '');
+		if (path.startsWith('@')) return path.split('/')[0].toLowerCase();
+		const m = path.match(/^channel\/(UC[0-9A-Za-z_-]{22})/);
+		return m ? m[1] : null;
+	};
+
+	const findSubscribedContainers = () => {
+		if (!subbedSet || subbedSet.size === 0) return [];
+
+		const containers = [];
+		document.querySelectorAll('ytd-rich-item-renderer').forEach((tile) => {
+			// Scan the tile's links for the uploader's channel link.
+			// Video/short/mix links normalize to null, so only a real
+			// channel link can match the subscription set.
+			for (const a of tile.querySelectorAll('a[href]')) {
+				const id = normalizeChannelHref(a.getAttribute('href'));
+				if (id && subbedSet.has(id)) {
+					containers.push(tile);
+					break;
+				}
+			}
+		});
+		return containers;
+	};
+
+	const updateClassOnSubscribedItems = async () => {
+		try {
+			document.querySelectorAll('.YT-HWV-SUBBED-DIMMED').forEach((el) => {
+				el.classList.remove('YT-HWV-SUBBED-DIMMED');
+			});
+			document.querySelectorAll('.YT-HWV-SUBBED-HIDDEN').forEach((el) => {
+				el.classList.remove('YT-HWV-SUBBED-HIDDEN');
+			});
+
+			// Homepage only -- elsewhere this would nuke whole pages.
+			if (location.pathname !== '/') return;
+
+			const state = await stateGet('YTHWV_STATE_SUBBED', 'normal');
+			if (state === 'normal') return;
+
+			if (!subbedSet) await loadSubs(false);
+			if (!subbedSet || subbedSet.size === 0) return;
+
+			findSubscribedContainers().forEach((item) => {
+				if (state === 'dimmed') {
+					item.classList.add('YT-HWV-SUBBED-DIMMED');
+				} else if (state === 'hidden') {
+					item.classList.add('YT-HWV-SUBBED-HIDDEN');
+				}
+			});
+		} catch (error) {
+			console.error('[YT-HWV]', error);
+		}
+	};
+
+	// ===========================================================
 
 	const renderButtons = async () => {
 		// Find button area target
@@ -560,10 +886,15 @@ const REGEX_USER = /.*\/@.*/u;
 		buttonArea.classList.add('YT-HWV-BUTTONS');
 
 		// Render buttons
-		for (const { icon, iconHidden, name, stateKey, type } of BUTTONS) {
-			// For toggle buttons, determine where in GM storage they track state
+		for (const { icon, iconHidden, name, stateKey, type, global } of BUTTONS) {
+			// For toggle buttons, determine where in GM storage they track state.
+			// Most toggles track per-section; "global" toggles share one state.
 			const section = determineYoutubeSection();
-			const storageKey = stateKey ? [stateKey, section].join('_') : null;
+			const storageKey = stateKey
+				? global
+					? stateKey
+					: [stateKey, section].join('_')
+				: null;
 			const toggleButtonState = storageKey
 				? await stateGet(storageKey, 'normal')
 				: 'normal';
@@ -572,7 +903,9 @@ const REGEX_USER = /.*\/@.*/u;
 			const button = document.createElement('button');
 			button.title =
 				type === 'toggle'
-					? `${name} : currently "${toggleButtonState}" for section "${section}"`
+					? global
+						? `${name} : currently "${toggleButtonState}"`
+						: `${name} : currently "${toggleButtonState}" for section "${section}"`
 					: `${name}`;
 			button.classList.add('YT-HWV-BUTTON');
 			if (toggleButtonState !== 'normal')
@@ -598,6 +931,7 @@ const REGEX_USER = /.*\/@.*/u;
 						await updateClassOnWatchedItems();
 						await updateClassOnShortsItems();
 						await updateClassOnMixesItems();
+						await updateClassOnSubscribedItems();
 						await renderButtons();
 					});
 					break;
@@ -632,10 +966,12 @@ const REGEX_USER = /.*\/@.*/u;
 			return;
 		}
 
-		logDebug('Running check for watched videos, shorts, and mixes');
+		logDebug('Running check for watched videos, shorts, mixes, and subs');
+		applySubbedTintSetting();
 		await updateClassOnWatchedItems();
 		await updateClassOnShortsItems();
 		await updateClassOnMixesItems();
+		await updateClassOnSubscribedItems();
 		await renderButtons();
 	}, 250);
 
