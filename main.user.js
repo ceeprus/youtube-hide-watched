@@ -218,7 +218,7 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 
 .YT-HWV-BUTTON:focus,
 .YT-HWV-BUTTON:hover {
-	background: var(--yt-spec-additive-background);
+	background: var(--yt-sys-color-baseline--overlay-button-primary);
 }
 
 .YT-HWV-BUTTON-DISABLED { opacity: 0.5 }
@@ -500,7 +500,9 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 							.classList.add('YT-HWV-HIDDEN-ROW-PARENT');
 					}
 				} else if (section === 'playlist') {
-					watchedItem = item.closest('ytd-playlist-video-renderer');
+					watchedItem =
+						item.closest('ytd-playlist-video-renderer') ||
+						item.closest('yt-lockup-view-model');
 				} else if (section === 'watch') {
 					watchedItem =
 						item.closest('ytd-compact-video-renderer') ||
