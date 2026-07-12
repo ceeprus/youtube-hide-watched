@@ -43,6 +43,7 @@ const REGEX_INNERTUBE_CLIENT_VERSION =
 const REGEX_CLIENT_VERSION = /"clientVersion":"([^"]+)"/;
 const REGEX_LEADING_SLASH = /^\//;
 const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
+const REGEX_SESSION_INDEX = /"SESSION_INDEX":"(\d+)"/;
 
 ((_undefined) => {
 	// Enable for debugging
@@ -647,6 +648,27 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 		return m ? m[1] : 'default';
 	};
 
+	// Which signed-in account (authuser index) this tab uses, so
+	// subscription fetches hit the right account instead of account 0.
+	const getSessionIndex = () => {
+		const m = document.documentElement.innerHTML.match(REGEX_SESSION_INDEX);
+		return m ? m[1] : '0';
+	};
+
+	// Handles can arrive \u-escaped (ytInitialData embeds non-ASCII that
+	// way) — decode to raw unicode so they compare equal to decoded DOM hrefs.
+	const decodeHandle = (raw) => {
+		let handle = raw;
+		if (raw.includes('\\u')) {
+			try {
+				handle = JSON.parse(`"${raw}"`);
+			} catch (_) {
+				/* keep raw */
+			}
+		}
+		return handle.toLowerCase();
+	};
+
 	const parseSubsFromHtml = (html) => {
 		const ids = new Set();
 		const handles = new Set();
@@ -656,9 +678,9 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 			ids.add(m[1]);
 		}
 		for (const m of html.matchAll(
-			/"(?:canonicalBaseUrl|url)":"\\?\/(@[^"\\/]+)"/g,
+			/"(?:canonicalBaseUrl|url)":"\\?\/(@(?:\\u[0-9a-fA-F]{4}|[^"\\/])+)"/g,
 		)) {
-			handles.add(m[1].toLowerCase());
+			handles.add(decodeHandle(m[1]));
 		}
 		return { handles: [...handles], ids: [...ids] };
 	};
@@ -697,7 +719,7 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 		}
 	};
 
-	const loadSubs = async (force = false) => {
+	const fetchSubs = async (force = false) => {
 		const key = `YTHWV_SUBS_${getUserId()}`;
 		let ttlHours = 24;
 		try {
@@ -733,9 +755,11 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 			// continuation tokens through the InnerTube API to collect EVERY
 			// subscription -- otherwise channels past the first page never make
 			// it into the set and can't be hidden.
-			const res = await fetch('https://www.youtube.com/feed/channels', {
-				credentials: 'include',
-			});
+			const authUser = getSessionIndex();
+			const res = await fetch(
+				`https://www.youtube.com/feed/channels?authuser=${authUser}`,
+				{ credentials: 'include' },
+			);
 			const html = await res.text();
 			let parsed = parseSubsFromHtml(html);
 			for (const x of parsed.ids) ids.add(x);
@@ -779,7 +803,7 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 							headers: {
 								Authorization: auth,
 								'Content-Type': 'application/json',
-								'X-Goog-AuthUser': '0',
+								'X-Goog-AuthUser': authUser,
 								'X-Origin': 'https://www.youtube.com',
 							},
 							method: 'POST',
@@ -820,6 +844,19 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 		return subbedSet;
 	};
 
+	// Coalesce concurrent callers into one fetch walk — on a cold cache,
+	// every debounced run() would otherwise start its own 60-page
+	// continuation crawl while the set is still loading.
+	let subsLoadInFlight = null;
+	const loadSubs = (force = false) => {
+		if (!subsLoadInFlight) {
+			subsLoadInFlight = fetchSubs(force).finally(() => {
+				subsLoadInFlight = null;
+			});
+		}
+		return subsLoadInFlight;
+	};
+
 	// Reduce a channel link to a comparable id (@handle or UC id), or null
 	const normalizeChannelHref = (href) => {
 		if (!href) return null;
@@ -830,7 +867,16 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 			/* href was already a path */
 		}
 		path = path.replace(REGEX_LEADING_SLASH, '');
-		if (path.startsWith('@')) return path.split('/')[0].toLowerCase();
+		if (path.startsWith('@')) {
+			// Hrefs percent-encode non-ASCII handles; the subscription set
+			// stores them decoded, so decode before comparing.
+			const handle = path.split('/')[0];
+			try {
+				return decodeURIComponent(handle).toLowerCase();
+			} catch (_) {
+				return handle.toLowerCase();
+			}
+		}
 		const m = path.match(REGEX_CHANNEL_ID_PATH);
 		return m ? m[1] : null;
 	};
@@ -890,9 +936,6 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 		// Find button area target
 		const target = findButtonAreaTarget();
 		if (!target) return;
-
-		// Did we already render the buttons?
-		const existingButtons = document.querySelector('.YT-HWV-BUTTONS');
 
 		// Generate buttons area DOM
 		const buttonArea = document.createElement('div');
@@ -957,16 +1000,15 @@ const REGEX_CHANNEL_ID_PATH = /^channel\/(UC[0-9A-Za-z_-]{22})/;
 			}
 		}
 
-		// Insert buttons into DOM. Remove-then-insert instead of replaceChild:
-		// if YouTube rebuilt the header, the old buttons live under a different
-		// parent and replaceChild would throw.
-		if (existingButtons) {
-			existingButtons.remove();
-			logDebug('Re-rendered menu buttons');
-		} else {
-			logDebug('Rendered menu buttons');
+		// Insert buttons into DOM. Query and remove existing rows in the same
+		// sync block as the insert: renderButtons runs concurrently (debounced
+		// run + click handlers), and a reference taken before the awaits above
+		// goes stale, letting two overlapping calls each insert a row.
+		for (const el of document.querySelectorAll('.YT-HWV-BUTTONS')) {
+			el.remove();
 		}
 		target.parentNode.insertBefore(buttonArea, target);
+		logDebug('Rendered menu buttons');
 	};
 
 	const run = debounce(async (mutations) => {
