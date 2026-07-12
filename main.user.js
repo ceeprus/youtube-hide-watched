@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube: Hide Watched Videos
 // @namespace    https://www.haus.gg/
-// @version      6.23
+// @version      6.24
 // @license      MIT
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=youtube.com
 // @description  Hides watched videos, Shorts, Mixes, and subscribed channels from your YouTube feeds.
@@ -115,9 +115,6 @@ const REGEX_SESSION_INDEX = /"SESSION_INDEX":"(\d+)"/;
 		title,
 	});
 
-	// Set defaults
-	localStorage.YTHWV_WATCHED = localStorage.YTHWV_WATCHED || 'false';
-
 	const logDebug = (...msgs) => {
 		if (DEBUG) console.debug('[YT-HWV]', msgs);
 	};
@@ -223,25 +220,6 @@ const REGEX_SESSION_INDEX = /"SESSION_INDEX":"(\d+)"/;
 }
 
 .YT-HWV-BUTTON-DISABLED { opacity: 0.5 }
-
-.YT-HWV-MENU {
-	background: #F8F8F8;
-	border: 1px solid #D3D3D3;
-	box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
-	display: none;
-	font-size: 12px;
-	margin-top: -1px;
-	padding: 10px;
-	position: absolute;
-	right: 0;
-	text-align: center;
-	top: 100%;
-	white-space: normal;
-	z-index: 9999;
-}
-
-.YT-HWV-MENU-ON { display: block; }
-.YT-HWV-MENUBUTTON-ON span { transform: rotate(180deg) }
 `);
 
 	const BUTTONS = [
@@ -390,9 +368,7 @@ const REGEX_SESSION_INDEX = /"SESSION_INDEX":"(\d+)"/;
 		const mixesContainers = [];
 
 		document
-			.querySelectorAll(
-				'a[href*="start_radio=1"], a[href*="list=RD"], a[href*="&list=RD"]',
-			)
+			.querySelectorAll('a[href*="start_radio=1"], a[href*="list=RD"]')
 			.forEach((link) => {
 				const container =
 					// Home / Subscriptions grid cell
@@ -1017,8 +993,7 @@ const REGEX_SESSION_INDEX = /"SESSION_INDEX":"(\d+)"/;
 		if (
 			mutations &&
 			mutations.length === 1 &&
-			(mutations[0].target.classList.contains('YT-HWV-BUTTON') ||
-				mutations[0].target.classList.contains('YT-HWV-BUTTON-SHORTS'))
+			mutations[0].target.classList.contains('YT-HWV-BUTTON')
 		) {
 			return;
 		}
@@ -1031,28 +1006,6 @@ const REGEX_SESSION_INDEX = /"SESSION_INDEX":"(\d+)"/;
 		await updateClassOnSubscribedItems();
 		await renderButtons();
 	}, 250);
-
-	// ===========================================================
-
-	// Hijack all XHR calls
-	const send = XMLHttpRequest.prototype.send;
-	XMLHttpRequest.prototype.send = function (data) {
-		this.addEventListener(
-			'readystatechange',
-			function () {
-				if (
-					// Anytime more videos are fetched -- re-run script
-					this.responseURL.indexOf('browse_ajax?action_continuation') > 0
-				) {
-					setTimeout(() => {
-						run();
-					}, 0);
-				}
-			},
-			false,
-		);
-		send.call(this, data);
-	};
 
 	// ===========================================================
 

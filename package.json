@@ -1,16 +1,21 @@
 {
 	"name": "youtube-hide-watched",
 	"version": "0.0.0-development",
-	"description": "Hides watched videos from your YouTube subscriptions page",
+	"description": "Hides watched videos, Shorts, Mixes, and subscribed channels from your YouTube feeds",
 	"license": "MIT",
-	"author": "Ev Haus",
-	"homepage": "https://github.com/EvHaus/youtube-hide-watched",
+	"author": "ceeprus",
+	"contributors": [
+		"Ev Haus",
+		"actionless",
+		"netjeff"
+	],
+	"homepage": "https://github.com/ceeprus/youtube-hide-watched",
 	"repository": {
 		"type": "git",
-		"url": "git@github.com:EvHaus/youtube-hide-watched.git"
+		"url": "git+https://github.com/ceeprus/youtube-hide-watched.git"
 	},
 	"bugs": {
-		"url": "https://github.com/EvHaus/youtube-hide-watched/issues"
+		"url": "https://github.com/ceeprus/youtube-hide-watched/issues"
 	},
 	"scripts": {
 		"biome:check": "biome check --write",
@@ -25,5 +30,8 @@
 	},
 	"publishConfig": {
 		"access": "public"
-	}
+	},
+	"trustedDependencies": [
+		"lefthook"
+	]
 }
