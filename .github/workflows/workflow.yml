@@ -11,9 +11,52 @@ jobs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
-    
+
     - name: Install dependencies
       run: bun i
-    
+
     - name: Test
       run: bun run test
+
+  # Mirror main.user.js into ceeprus/userscript (the repo installed
+  # scripts actually update from). Runs only after tests pass so a
+  # broken script never reaches the update URL. Requires the
+  # USERSCRIPT_SYNC_TOKEN secret (fine-grained PAT, Contents
+  # read/write on ceeprus/userscript); skips quietly if absent.
+  sync:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check sync token
+      id: token
+      run: echo "present=${{ secrets.USERSCRIPT_SYNC_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/checkout@v7
+      if: steps.token.outputs.present == 'true'
+
+    - name: Checkout ceeprus/userscript
+      if: steps.token.outputs.present == 'true'
+      uses: actions/checkout@v7
+      with:
+        repository: ceeprus/userscript
+        token: ${{ secrets.USERSCRIPT_SYNC_TOKEN }}
+        path: userscript
+
+    - name: Copy script
+      if: steps.token.outputs.present == 'true'
+      run: cp main.user.js userscript/youtube/youtube-hide-watched.user.js
+
+    - name: Commit and push if changed
+      if: steps.token.outputs.present == 'true'
+      working-directory: userscript
+      run: |
+        if git diff --quiet; then
+          echo "Already in sync"
+          exit 0
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add youtube/youtube-hide-watched.user.js
+        git commit -m "chore: sync youtube script from youtube-hide-watched@${GITHUB_SHA::7}"
+        git push
