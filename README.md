@@ -1,6 +1,6 @@
 # youtube-hide-watched
 
-A simple userscript for toggling visibility of watched videos in YouTube, on your Subscriptions page and elsewhere on the site. Also provides toggles to hide YouTube Shorts, YouTube Mixes, and videos from channels you're already subscribed to.
+A simple userscript for toggling visibility of watched videos in YouTube, on your Subscriptions page and elsewhere on the site. Also provides toggles to hide YouTube Shorts, YouTube Mixes and playlists, and videos from channels you're already subscribed to.
 
 # Installation
 
@@ -10,7 +10,7 @@ A simple userscript for toggling visibility of watched videos in YouTube, on you
 
 # How to Use
 
-The script adds four small buttons at the top of the page, see screenshot below. Pressing the "Watched Videos" button cycles through showing watched videos normally, then dimmed, then entirely hidden. The "Shorts", "Mixes", and "Subscribed Channels" buttons do the same for Shorts, YouTube Mixes (the auto-generated "Mix" / radio playlists), and videos from channels you already follow, respectively.
+The script adds four small buttons at the top of the page, see screenshot below. Pressing the "Watched Videos" button cycles through showing watched videos normally, then dimmed, then entirely hidden. The "Shorts", "Mixes & Playlists", and "Subscribed Channels" buttons do the same for Shorts, YouTube Mixes (the auto-generated "Mix" / radio playlists) and playlists, and videos from channels you already follow, respectively.
 
 You will see the buttons at the top of the page, to right of the Search box.
 
@@ -27,7 +27,7 @@ The "Watched Videos" button keeps track of different areas of YouTube separately
 
 YouTube does not keep track of which Shorts you've watched, so the "Shorts" button dims/hides all Shorts.
 
-The "Mixes" button hides YouTube Mixes wherever they appear — your home feed, search results, and the watch-page sidebar. Like the "Watched Videos" button, it remembers its setting separately per area.
+The "Mixes & Playlists" button hides YouTube Mixes and playlist tiles wherever they appear — your home feed, search results, and the watch-page sidebar. Your own library and channel "Playlists" tabs are left alone. Like the "Watched Videos" button, it remembers its setting separately per area.
 
 The "Subscribed Channels" button hides — or tints darker — videos on your homepage from channels you're already subscribed to, so the homepage surfaces things you don't already follow. It builds your subscription list automatically the first time you enable it and refreshes it periodically. This one only applies to the homepage.
 
