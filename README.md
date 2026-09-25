@@ -31,11 +31,14 @@ The "Mixes & Playlists" button hides YouTube Mixes and playlist tiles wherever t
 
 The "Subscribed Channels" button hides — or tints darker — videos on your homepage from channels you're already subscribed to, so the homepage surfaces things you don't already follow. It builds your subscription list automatically the first time you enable it and refreshes it periodically. This one only applies to the homepage.
 
+Shelves that span the whole feed (Playables, "Explore more topics", and the like) are moved down so they never sit under a half-empty row of videos after the script hides some.
+
 # Settings
 
 Click the gear button to open settings:
 
 - **Hide/Dim Videos Above Percent** — how much of a video must be watched (per YouTube's native progress bar) before it counts as watched.
+- **Hide the YouTube Playables (games) shelf** — on by default; untick to keep the Playables shelf on your homepage.
 - **Subscribed Channels Tint Brightness %** — how dark the "tint" state makes subscribed-channel tiles (lower is darker).
 - **Refresh Subscription List Every (hours)** — how often the auto-built subscription list is rebuilt.
 - **Refresh subscription list now (on Save)** — tick this and hit Save to rebuild the list immediately (useful right after subscribing to something new).
