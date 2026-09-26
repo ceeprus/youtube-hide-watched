@@ -1,7 +1,7 @@
 {
 	"name": "youtube-hide-watched",
 	"version": "0.0.0-development",
-	"description": "Hides watched videos, Shorts, Mixes, playlists, and subscribed channels from your YouTube feeds",
+	"description": "Hides watched videos, Shorts, Mixes, playlists, members-only videos, and subscribed channels from your YouTube feeds",
 	"license": "MIT",
 	"author": "ceeprus",
 	"contributors": [
